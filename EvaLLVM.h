@@ -13,7 +13,11 @@ class EvaLLVM
 {
 public:
 
-    EvaLLVM() {moduleInit();}
+    EvaLLVM()
+    {
+        moduleInit();
+        setupExternalFunctions();
+    }
 
     void exec(const std::string& program)
     {
@@ -57,12 +61,12 @@ private:
         //return it. since we wanna return 42,
         //we should cast what ever the result is
         //to int.
-        auto i32Result =
-            builder -> CreateIntCast(result, builder->getInt32Ty(), true);
+        //auto i32Result = // we commented that because it will cast str to int
+            //builder -> CreateIntCast(result, builder->getInt32Ty(), true);
         // the boolian if for withe rthe i32Result is signed.
 
         //create ret instruction
-        builder -> CreateRet(i32Result);
+        builder -> CreateRet(builder->getInt32(0));
     }
 
 
@@ -73,8 +77,52 @@ private:
     //here the result is a ineger number
     llvm::Value *gen(/* ast */)
     {
-        return builder -> getInt32(42);
+        //return builder -> getInt32(42);
+
+
+        //Now intead of an int, lets harcode a
+        //string. All literal string that is the strings
+        //containing only characters are considers global
+        //strings and the builder has a methd for that.
+
+        return builder -> CreateGlobalString("Hello, world\n");
+
+        //the result will be
+        //@0 = private unnamed_addr constant [14 x i8] c"Hello, world\0A\00", align 1
+        //remember that we said that the @ symbol in llvm is for the glonbal variables.
+
+
     }
+
+    //Now we said that we can distinguish the function from the
+    //function declation and the definition. so if a external
+    //funcion comes from another module and so on. We should
+    //be possible to define an external function.
+
+    void setupExternalFunctions()
+    {
+        //from stl, printf accepts the format string,
+        //which is the null terminated charcter pointer string
+        //and the char class from C++ us just an alias for
+        //the byte.
+        //The way we do that in llvm is exactly the same.
+        //we create an extra type like
+        //auto bytePtrTry = builder -> getInt8Ty() -> getPointerTo();
+        auto bytePtrTry = llvm::PointerType::get(*ctx,0);
+
+
+        //to declare a function like printf we use getOrInsertFunction.
+        module -> getOrInsertFunction("printf",
+                //int printf(const char* format, ...)
+                llvm::FunctionType::get(
+                    /*return type*/ builder->getInt32Ty(),
+                    /*format arg*/ bytePtrTry,
+                    /*vararg*/true));
+    }
+
+
+
+
 
     //cerateFunction:
     //Remembber the gloal is to see how the llvm compiles a .ll file.
