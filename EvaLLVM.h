@@ -6,14 +6,16 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+#include "./parser/EvaGrammar.h"
 
 
+using syntax::EvaParser;
 
 class EvaLLVM
 {
 public:
 
-    EvaLLVM()
+    EvaLLVM() : parser(std::make_unique<EvaParser>())
     {
         moduleInit();
         setupExternalFunctions();
@@ -23,13 +25,13 @@ public:
     {
 
         //1. pars the program
-        //auto ast = parser->parser(program);
+        auto ast = parser->parse(program);
 
 
         //2. Compile to LLVM IR
         //for the starting point we do not have the
         //ast so lets just return 42 like before
-        compile();
+        compile(ast);
 
         //print generated code
         module -> print(llvm::outs(), nullptr);
@@ -41,7 +43,7 @@ public:
 
 private:
 
-    void compile (/* TODO: std */)
+    void compile (const Exp& ast)
     {
         //1.create main function
         fn = createFunction("main",
@@ -54,7 +56,7 @@ private:
         //2.compile main function
         //the gen function accept any AST and will be
         //the recursive compiler (*******)
-        auto result = gen(/* ast */);
+        auto result = gen(ast);
 
 
         //3. when the result is ready we should
@@ -75,47 +77,39 @@ private:
     //this is a very basic type which can accept pretty much
     //everything might be numbers, string , etc
     //here the result is a ineger number
-    llvm::Value *gen(/* ast */)
+    llvm::Value *gen(const Exp& exp)
     {
-        //return builder -> getInt32(42);
+        switch(exp.type)
+        {
+            //Numbers
+            case ExpType::NUMBER:
+                return builder->getInt32(exp.number);
+            case ExpType::STRING:
+                return builder->CreateGlobalStringPtr(exp.string);
+            case ExpType::SYMBOL:
+                //TODO
+                return builder-> getInt3(0);
+             case ExpType::LIST:
+                auto tag = exp.list[0];
 
+                if(tag.type == ExpType::SYMBOL)
+                {
+                    auto op = tag.string;
+                    if(op == "printf")
+                    {
+                        auto printn = module -> getFunction("printf");
+                        std::vector<llvm::Value*> args{};
 
-        //Now intead of an int, lets harcode a
-        //string. All literal string that is the strings
-        //containing only characters are considers global
-        //strings and the builder has a methd for that.
+                        for(auto i = 0; i < exp.list.size(); ++i)
+                        {
+                            args.push_back(gen(exp.list[i]));
+                        }
+                        return builder -> CreateCall(printn, args);
+                    }
+                }
+        }
 
-        auto str = builder -> CreateGlobalString("Hello, world\n");
-
-        //now with the printf definition of the printf,
-        //we print the what builder is giving to us.- Hello, world
-        //first we should tell the module to get the function
-        auto printn = module -> getFunction("printf");
-
-        //then we need to define the arguments
-        std::vector<llvm::Value*> args{str};
-
-        //Then we need to use the creatCall method to call the printf
-        return builder->CreateCall(printn, args);
-
-        //the result will be
-        //; ModuleID = 'EvaLLVM'
-        //source_filename = "EvaLLVM"
-        //
-        //@0 = private unnamed_addr constant [14 x i8] c"Hello, world\0A\00", align 1
-
-        //declare i32 @printf(ptr, ...)
-
-        //define i32 @main() {
-        //entry:
-          //%0 = call i32 (ptr, ...) @printf(ptr @0) <-- here 0 is a pointer to characer
-          //                                             we see that becuase we passed the
-          //                                             args
-          //ret i32 0
-        //}
-        //Hello, world <-- the actual result. The string is printed
-        //0
-
+        return builder-> getInt32(0);
 
     }
 
@@ -252,6 +246,9 @@ private:
         module = std::make_unique<llvm::Module>("EvaLLVM", *ctx);
         builder = std::make_unique<llvm::IRBuilder<>>(*ctx);
     }
+
+    //define the parser instance
+    std::unique_ptr<EvaParser> parser;
 
     //currently compiling function
     llvm::Function *fn;
