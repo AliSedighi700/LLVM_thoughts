@@ -1,0 +1,111 @@
+/**
+ * When you build a compiler or interpreter (like your EvaLLVM project),
+ * you need a parser that can understand expressions like: (2 + 3) * 4
+ * But your parser needs to know what's valid syntax — and how to recognize it.
+ * That's what the grammar in .bnf does: it defines the rules of formation.
+ * Eva programming language will be following S-expression,
+ * that is the either simple atoms such as numbers or symbols
+ * or string or lists,..
+ * Atom: 43, foo, bar, "hello world"
+ * Lists: (), (+ 4 x), (print "hello")
+ */
+
+//---------------------------------------
+// Lexical grammar (tokens):
+
+%lex
+
+%%
+
+\/\/.*                      /* skip comments */
+\/\*([^*]|\*+[^*/])*\*+\/   /* skip comments */
+
+\s+                         /* skip whitespace */
+
+\"[^\"]*\"                  return 'STRING'
+
+\d+                         return 'NUMBER'
+
+[\w\-+*=!<>/]+              return 'SYMBOL'
+
+/lex
+
+//--------------------------------------
+// Syntactic grammar (BNF):
+%{
+
+#include <string>
+#include <vector>
+
+/**
+ * Expression type.
+ */
+enum class ExpType
+{
+    NUMBER,
+    STRING,
+    SYMBOL,
+    LIST
+};
+/**
+ * Expression
+ */
+struct Exp
+{
+    ExpType type;
+
+    int number;
+    std::string string;
+    std::vector<Exp> list;
+
+    // if we receive number in the ctor
+    Exp(int number) : type(ExpType::NUMBER), number(number) {}
+
+    // if we receive string in the ctor
+    Exp(std::string strVal)
+    {
+        if(strVal[0] == '"')
+        {
+            type = ExpType::STRING;
+            string = strVal.substr(1, strVal.size() - 2);
+        }
+        else
+        {
+            type = ExpType::SYMBOL;
+            string = strVal;
+        }
+    }
+
+    // for lists
+    Exp(std::vector<Exp> list) : type(ExpType::LIST), list(list) {}
+};
+
+// C++ plugin for the syntax tool expect the
+// final result to have a value type. So we use the type alias
+// and say that the type is used by the syntax is the expression.
+
+using Value = Exp;
+
+%}
+
+%%
+
+Exp
+  : Atom
+  | List
+  ;
+
+Atom
+  : NUMBER { $$ = Exp(std::stoi($1)); }
+  | STRING { $$ = Exp($1); }
+  | SYMBOL { $$ = Exp($1); }
+  ;
+
+List
+  : '(' ListEntries ')' { $$ = $2; }
+  ;
+
+ListEntries
+  : /* empty */ { $$ = Exp(std::vector<Exp>{}); }
+  | ListEntries Exp { $1.list.push_back($2); $$ = $1; }
+  ;
