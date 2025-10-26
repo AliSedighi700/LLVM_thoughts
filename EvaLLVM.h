@@ -85,11 +85,36 @@ private:
         //containing only characters are considers global
         //strings and the builder has a methd for that.
 
-        return builder -> CreateGlobalString("Hello, world\n");
+        auto str = builder -> CreateGlobalString("Hello, world\n");
+
+        //now with the printf definition of the printf,
+        //we print the what builder is giving to us.- Hello, world
+        //first we should tell the module to get the function
+        auto printn = module -> getFunction("printf");
+
+        //then we need to define the arguments
+        std::vector<llvm::Value*> args{str};
+
+        //Then we need to use the creatCall method to call the printf
+        return builder->CreateCall(printn, args);
 
         //the result will be
+        //; ModuleID = 'EvaLLVM'
+        //source_filename = "EvaLLVM"
+        //
         //@0 = private unnamed_addr constant [14 x i8] c"Hello, world\0A\00", align 1
-        //remember that we said that the @ symbol in llvm is for the glonbal variables.
+
+        //declare i32 @printf(ptr, ...)
+
+        //define i32 @main() {
+        //entry:
+          //%0 = call i32 (ptr, ...) @printf(ptr @0) <-- here 0 is a pointer to characer
+          //                                             we see that becuase we passed the
+          //                                             args
+          //ret i32 0
+        //}
+        //Hello, world <-- the actual result. The string is printed
+        //0
 
 
     }
