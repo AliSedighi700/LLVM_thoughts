@@ -15,7 +15,6 @@ public:
 
     EvaLLVM() {moduleInit();}
 
-
     void exec(const std::string& program)
     {
 
