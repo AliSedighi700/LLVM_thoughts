@@ -2,6 +2,7 @@
 #define EvaLLVM_h
 
 #include <string>
+#include <regex>
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -85,23 +86,41 @@ private:
             //Numbers
             case ExpType::NUMBER:
                 return builder->getInt32(exp.number);
-            case ExpType::STRING:
-                return builder->CreateGlobalString(exp.string);
+            case ExpType::STRING:{
+                auto re = std::regex("\\\\n");
+                auto str = std::regex_replace(exp.string, re, "\n");
+                return builder->CreateGlobalString(str);
+            }
             case ExpType::SYMBOL:
-                //TODO
-                return builder-> getInt32(0);
+                //variables, operators
+                if(exp.string == "true" || exp.string == "false")
+                {
+                    return builder -> getInt1(exp.string == "true" ? true : false);
+                }else //for variables
+                {
+
+
+                }
              case ExpType::LIST:
                 auto tag = exp.list[0];
 
                 if(tag.type == ExpType::SYMBOL)
                 {
                     auto op = tag.string;
-                    if(op == "printf")
+                    if(op == "var")
+                    {
+                        auto varName = exp.list[1].string;
+                        auto init = gen(exp.list[2]);
+
+                        return createGlobalVar(varName,
+                                              (llvm::Constant*)init);
+                    }
+                    else if(op == "printf")
                     {
                         auto printn = module -> getFunction("printf");
                         std::vector<llvm::Value*> args{};
 
-                        for(auto i = 0; i < exp.list.size(); ++i)
+                        for(auto i = 1; i < exp.list.size(); ++i)
                         {
                             args.push_back(gen(exp.list[i]));
                         }
@@ -112,6 +131,19 @@ private:
 
         return builder-> getInt32(0);
 
+    }
+
+
+    //create global variables
+    llvm::GlobalVariable* createGlobalVar(const std::string& name,
+                                          llvm::Constant* init)
+    {
+        module -> getOrInsertGlobal(name, init->getType());
+        auto variable = module -> getNamedGlobal(name);
+        variable -> setAlignment(llvm::MaybeAlign(4));
+        variable -> setConstant(false);
+        variable -> setInitializer(init);
+        return variable;
     }
 
     //Now we said that we can distinguish the function from the
@@ -128,7 +160,7 @@ private:
         //The way we do that in llvm is exactly the same.
         //we create an extra type like
         //auto bytePtrTry = builder -> getInt8Ty() -> getPointerTo();
-        auto bytePtrTry = llvm::PointerType::get(*ctx,0);
+        auto bytePtrTry = llvm::PointerType::get(builder->getContext(),0);
 
 
         //to declare a function like printf we use getOrInsertFunction.
