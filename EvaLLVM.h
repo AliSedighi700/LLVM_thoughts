@@ -52,6 +52,9 @@ private:
                 llvm::FunctionType::get(/*return type*/builder->getInt32Ty(),
                                         /*vararg*/ false ));
 
+
+        createGlobalVar("VERSION", builder->getInt32(42));
+
         //llvm:FunctionType::get has multiple ctor one of them just get
         //the retunr type.
 
@@ -99,7 +102,8 @@ private:
                 }else //for variables
                 {
 
-
+                    //global variables
+                    return module -> getNamedGlobal(exp.string)->getInitializer();
                 }
              case ExpType::LIST:
                 auto tag = exp.list[0];

@@ -10,7 +10,7 @@ int main(int argc, char const *argv[])
        //(printf "Value: %d\n" 42)
        //(printf "True: %d\n" false)
 
-       (var VERSION 42)
+       (printf "version: %d\n" VERSION)
 
 
     )";
