@@ -319,7 +319,8 @@ class Tokenizer {
            << ":" << column << "\n\n";
 
     std::cerr << errMsg.str();
-    throw new std::runtime_error(errMsg.str().c_str());
+    std::abort();
+    //throw std::runtime_error(errMsg.str());
   }
 
   /**
@@ -421,15 +422,15 @@ return TokenType::TOKEN_TYPE_8;
 }
 
 inline TokenType _lexRule3(const Tokenizer& tokenizer, const std::string& yytext) {
-return TokenType::/* skip comments */;
+return TokenType::__EMPTY;
 }
 
 inline TokenType _lexRule4(const Tokenizer& tokenizer, const std::string& yytext) {
-return TokenType::/* skip comments */;
+return TokenType::__EMPTY;
 }
 
 inline TokenType _lexRule5(const Tokenizer& tokenizer, const std::string& yytext) {
-return TokenType::/* skip whitespace */;
+return TokenType::__EMPTY;
 }
 
 inline TokenType _lexRule6(const Tokenizer& tokenizer, const std::string& yytext) {
@@ -555,7 +556,7 @@ class EvaGrammar {
    */
   Value parse(const std::string& str) {
     // clang-format off
-    
+
     // clang-format on
 
     // Initialize the tokenizer and the string.
@@ -638,7 +639,7 @@ class EvaGrammar {
         statesStack.pop_back();
 
         // clang-format off
-        
+
         // clang-format on
 
         return result;
@@ -654,7 +655,8 @@ class EvaGrammar {
     if (token->type == TokenType::__EOF && !tokenizer.hasMoreTokens()) {
       std::string errMsg = "Unexpected end of input.\n";
       std::cerr << errMsg;
-      throw std::runtime_error(errMsg.c_str());
+      std::abort();
+      //throw std::runtime_error(errMsg.c_str());
     }
     tokenizer.throwUnexpectedToken(token->value, token->startLine,
                                    token->startColumn);

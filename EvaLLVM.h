@@ -6,16 +6,17 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
+
 #include "./parser/EvaGrammar.h"
 
 
-using syntax::EvaParser;
+using syntax::EvaGrammar;
 
 class EvaLLVM
 {
 public:
 
-    EvaLLVM() : parser(std::make_unique<EvaParser>())
+    EvaLLVM() : parser(std::make_unique<EvaGrammar>())
     {
         moduleInit();
         setupExternalFunctions();
@@ -85,10 +86,10 @@ private:
             case ExpType::NUMBER:
                 return builder->getInt32(exp.number);
             case ExpType::STRING:
-                return builder->CreateGlobalStringPtr(exp.string);
+                return builder->CreateGlobalString(exp.string);
             case ExpType::SYMBOL:
                 //TODO
-                return builder-> getInt3(0);
+                return builder-> getInt32(0);
              case ExpType::LIST:
                 auto tag = exp.list[0];
 
@@ -248,7 +249,7 @@ private:
     }
 
     //define the parser instance
-    std::unique_ptr<EvaParser> parser;
+    std::unique_ptr<EvaGrammar> parser;
 
     //currently compiling function
     llvm::Function *fn;
