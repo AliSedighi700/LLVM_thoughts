@@ -3,15 +3,18 @@
 
 #include <string>
 #include <regex>
+#include <map>
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 
+#include "./Environment.h"
 #include "./parser/EvaGrammar.h"
 
 
 using syntax::EvaGrammar;
+using Env = std::shared_ptr<Environment>{};
 
 class EvaLLVM
 {
@@ -21,13 +24,14 @@ public:
     {
         moduleInit();
         setupExternalFunctions();
+        setupGlobalEnvironment();
     }
 
     void exec(const std::string& program)
     {
 
         //1. pars the program
-        auto ast = parser->parse(program);
+        auto ast = parser->parse("(begin" + program + ")");
 
 
         //2. Compile to LLVM IR
@@ -50,7 +54,13 @@ private:
         //1.create main function
         fn = createFunction("main",
                 llvm::FunctionType::get(/*return type*/builder->getInt32Ty(),
-                                        /*vararg*/ false ));
+                                        /*vararg*/ false ), GlobalEnv);
+
+        //we always start our code generation in the global
+        //environment so we pass the GlobalEnv first to
+        //creatfunction because function are also symbols
+        //so we have to install those symbols into the
+        //enviroment
 
 
         createGlobalVar("VERSION", builder->getInt32(42));
@@ -61,7 +71,7 @@ private:
         //2.compile main function
         //the gen function accept any AST and will be
         //the recursive compiler (*******)
-        auto result = gen(ast);
+        gen(ast, GlobalEnv);
 
 
         //3. when the result is ready we should
@@ -82,7 +92,7 @@ private:
     //this is a very basic type which can accept pretty much
     //everything might be numbers, string , etc
     //here the result is a ineger number
-    llvm::Value *gen(const Exp& exp)
+    llvm::Value *gen(const Exp& exp, Env env)
     {
         switch(exp.type)
         {
@@ -101,23 +111,55 @@ private:
                     return builder -> getInt1(exp.string == "true" ? true : false);
                 }else //for variables
                 {
+                    //since the value now can be update
+                    //we cannot use the initializer in the
+                    //global environment. we should load
+                    //the vraible into local variable.
+
+                    auto varName = exp.string;
+                    auto var = env -> lookup(varName);
+
+                    //However the vriable could be a funcion or
+                    //global variable so we should use the dynamic castig
+                    //from llvm. So if it will be global variable we will
+                    //loaded onto the stack using createLoad
+
+                    if(auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value))
+                    {
+                        return builder -> createLoad(glovalVar->gerInitializer()->getType,
+                                                     globalVar, varName.c_str());
+                    }
+
+
 
                     //global variables
                     return module -> getNamedGlobal(exp.string)->getInitializer();
                 }
              case ExpType::LIST:
                 auto tag = exp.list[0];
-
                 if(tag.type == ExpType::SYMBOL)
                 {
                     auto op = tag.string;
                     if(op == "var")
                     {
                         auto varName = exp.list[1].string;
-                        auto init = gen(exp.list[2]);
+                        auto init = gen(exp.list[2], env);
 
                         return createGlobalVar(varName,
                                               (llvm::Constant*)init);
+                    }
+                    else if(op == "begin")
+                    {
+                        //compile each experssion within the block.
+                        //result is the last evaluated expression.
+
+                        llvm::Value* blockRes;
+
+                        for(auto i = 1 ; i < exp.list.size(); ++i)
+                        {
+                            blockRes = gen(exp.list[i], env); //TODO local block env
+                        }
+                        return blockRes;
                     }
                     else if(op == "printf")
                     {
@@ -126,7 +168,7 @@ private:
 
                         for(auto i = 1; i < exp.list.size(); ++i)
                         {
-                            args.push_back(gen(exp.list[i]));
+                            args.push_back(gen(exp.list[i], env));
                         }
                         return builder -> CreateCall(printn, args);
                     }
@@ -211,7 +253,8 @@ private:
     //   For that we need the name and the type of the function.
 
     llvm::Function *createFunction(const std::string& fnName,
-                                   llvm::FunctionType* fnType)
+                                   llvm::FunctionType* fnType,
+                                   Env env)
     {
         //needless to say we have function decleration and
         //functoion definition.
@@ -228,7 +271,7 @@ private:
         //if it does not exit we create it.
         if(fn == nullptr)
         {
-            fn = createFunctionProto(fnName, fnType);
+            fn = createFunctionProto(fnName, fnType, env);
         }
 
         //Now the function is define, we can create its
@@ -239,13 +282,17 @@ private:
     }
 
     llvm::Function* createFunctionProto(const std::string& fnName,
-                                       llvm::FunctionType* fnType)
+                                       llvm::FunctionType* fnType,
+                                       Env env)
     {
         auto fn = llvm::Function::Create(fnType, llvm::Function::ExternalLinkage,
                                          fnName, *module);
 
         //once the function is defined we can call varify that.
         verifyFunction(*fn);
+
+        //we will use the deifne method to install functions
+        env -> define(fnName, fn);
         return fn;
     }
 
@@ -284,8 +331,42 @@ private:
         builder = std::make_unique<llvm::IRBuilder<>>(*ctx);
     }
 
+    void setupGlobalEnvironment()
+    {
+        //for simplicity we have the global onbject,
+        //where we can set all our global variables
+        std::map<std::string, llvm::value*> globalObject
+        {
+            {"VERSION", builder->getInt32(42)},
+        };
+
+        //then we need the global record
+        std::map<std::string, llvm::value*> globalRec{};
+
+
+        //When we setet our global variables inside the globalObject
+        //so we go throug global object and fill the global record
+        for(auto& entry : globalObject)
+        {
+            globalRec[entry.first] =
+                createGlobalVar(entry.first, (llvm::Constant*)entry.second);
+        }
+
+        GlobalEnv = std::shared_ptr<Environment>(globalRec, nullptr);
+
+
+        //Now our gen function should now accept the environment. because
+        //inorder to find the variables we should loopup in that
+        //environment.
+    }
+
+
     //define the parser instance
     std::unique_ptr<EvaGrammar> parser;
+
+    //store the global environment
+    std::shared_ptr<Environment> GlobalEnv{};
+
 
     //currently compiling function
     llvm::Function *fn;
