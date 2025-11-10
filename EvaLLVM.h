@@ -14,7 +14,7 @@
 
 
 using syntax::EvaGrammar;
-using Env = std::shared_ptr<Environment>{};
+using Env = std::shared_ptr<Environment>;
 
 class EvaLLVM
 {
@@ -63,7 +63,7 @@ private:
         //enviroment
 
 
-        createGlobalVar("VERSION", builder->getInt32(42));
+        //createGlobalVar("VERSION", builder->getInt32(42));
 
         //llvm:FunctionType::get has multiple ctor one of them just get
         //the retunr type.
@@ -117,39 +117,80 @@ private:
                     //the vraible into local variable.
 
                     auto varName = exp.string;
-                    auto var = env -> lookup(varName);
+                    auto value = env -> lookup(varName);
 
                     //However the vriable could be a funcion or
                     //global variable so we should use the dynamic castig
                     //from llvm. So if it will be global variable we will
                     //loaded onto the stack using createLoad
 
-                    if(auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value))
+
+                    //local variables are handeled with llvm::AllocaInst
+                    //which is allocatio on stack.
+                    //in contrast to the global variables which are handeled
+                    //with llvm::GlobalVariable.
+                    //so from out environment if we are able to cast the variable
+                    //to a local variable, we should load the variable from the stack.
+                    if(auto localVar = llvm::dyn_cast<llvm::AllocaInst>(value))
                     {
-                        return builder -> createLoad(glovalVar->gerInitializer()->getType,
+                        return builder->CreateLoad(localVar->getAllocatedType(), localVar,
+                                                   varName.c_str());
+                    }
+                    else if(auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(value))
+                    {
+                        return builder -> CreateLoad(globalVar->getInitializer()->getType(),
                                                      globalVar, varName.c_str());
                     }
-
-
-
-                    //global variables
-                    return module -> getNamedGlobal(exp.string)->getInitializer();
                 }
              case ExpType::LIST:
                 auto tag = exp.list[0];
                 if(tag.type == ExpType::SYMBOL)
                 {
                     auto op = tag.string;
+
+                    //lets annotating our variables with types
+                    //we will use i32 for all numbers
+                    //variable decleration (var x (+ y 10))
+                    //or we can annotate a vraible name or
+                    //a parameter with a type (var (x number) 42)
+                    //so the first argument is the name and the
+                    //second is the type.
                     if(op == "var")
                     {
-                        auto varName = exp.list[1].string;
+                        //now we should take the name
+                        //and extract the name and the type
+                        //with extractVarName
+                        auto varNameDecl = exp.list[1];
+                        auto varName = extractVarName(varNameDecl);
+
                         auto init = gen(exp.list[2], env);
 
-                        return createGlobalVar(varName,
-                                              (llvm::Constant*)init);
+                        auto varType = extractVarType(varNameDecl);
+
+                        //once we extract the name and the type we
+                        //should allocate the variable.
+                        auto varBinding = allocVar(varName, varType, env);
+
+                        //Then after allocation we should store the it's
+                        //initializer to the binding
+                        return builder->CreateStore(init, varBinding);
+
+
+                    }
+                    else if(op == "set")
+                    {
+                        auto value = gen(exp.list[2], env);
+                        auto varName = exp.list[1].string;
+                        auto varBinding = env->lookup(varName);
+
+                        return builder->CreateStore(value, varBinding);
                     }
                     else if(op == "begin")
                     {
+
+                        auto blockEnv = std::make_shared<Environment>(
+                                        std::map<std::string, llvm::Value*>{}, env);
+
                         //compile each experssion within the block.
                         //result is the last evaluated expression.
 
@@ -157,7 +198,7 @@ private:
 
                         for(auto i = 1 ; i < exp.list.size(); ++i)
                         {
-                            blockRes = gen(exp.list[i], env); //TODO local block env
+                            blockRes = gen(exp.list[i], blockEnv);
                         }
                         return blockRes;
                     }
@@ -177,6 +218,63 @@ private:
 
         return builder-> getInt32(0);
 
+    }
+
+
+    //exract var or parameter name considering type.
+    // x -> x
+    // (x number) -> x
+    std::string extractVarName(const Exp& exp)
+    {
+        return exp.type == ExpType::LIST ? exp.list[0].string : exp.string;
+    }
+
+
+    //extract var or parameter type with i32 as the default
+    // x -> i32
+    // (x number) -> number
+    llvm::Type* extractVarType(const Exp& exp, llvm::Value* initVal = nullptr)
+    {
+        return exp.type == ExpType::LIST ? getTypeFromString(exp.list[1].string)
+                                        : builder -> getInt32Ty();
+    }
+
+    llvm::Type* getTypeFromString(const std::string& type_)
+    {
+        //number  -> i32
+        if(type_ == "number")
+        {
+            return builder -> getInt32Ty();
+        }
+
+        //string -> i8* (aka char*)
+        if(type_ == "string")
+        {
+            //getcontext in llvm20+ gives i8*
+            return llvm::PointerType::get(builder->getContext(),0);
+        }
+
+        return builder -> getInt32Ty();
+    }
+
+    llvm::Value* allocVar(const std::string& name, llvm::Type* type_, Env env)
+    {
+        //All the local variables shoudl be allocated at the begening of the
+        //stack frame.
+        //Since the builder is emiting code, it might be already somewhere deeper
+        //in the bytecode. So to emit at the begining of function we introduce our
+        //second builder ->varsBuilder
+
+        //explicitly say the varBuilder to insert point at
+        // at the begining of the function
+        varsBuilder -> SetInsertPoint(&fn->getEntryBlock());
+
+        auto varAlloc = varsBuilder -> CreateAlloca(type_, nullptr, name.c_str());
+
+        //add to the environment
+        env->define(name, varAlloc);
+
+        return varAlloc;
     }
 
 
@@ -328,6 +426,7 @@ private:
     {
         ctx = std::make_unique<llvm::LLVMContext>();
         module = std::make_unique<llvm::Module>("EvaLLVM", *ctx);
+        varsBuilder = std::make_unique<llvm::IRBuilder<>>(*ctx);
         builder = std::make_unique<llvm::IRBuilder<>>(*ctx);
     }
 
@@ -335,13 +434,13 @@ private:
     {
         //for simplicity we have the global onbject,
         //where we can set all our global variables
-        std::map<std::string, llvm::value*> globalObject
+        std::map<std::string, llvm::Value*> globalObject
         {
             {"VERSION", builder->getInt32(42)},
         };
 
         //then we need the global record
-        std::map<std::string, llvm::value*> globalRec{};
+        std::map<std::string, llvm::Value*> globalRec{};
 
 
         //When we setet our global variables inside the globalObject
@@ -352,7 +451,7 @@ private:
                 createGlobalVar(entry.first, (llvm::Constant*)entry.second);
         }
 
-        GlobalEnv = std::shared_ptr<Environment>(globalRec, nullptr);
+        GlobalEnv = std::make_shared<Environment>(globalRec, nullptr);
 
 
         //Now our gen function should now accept the environment. because
@@ -373,6 +472,13 @@ private:
 
     std::unique_ptr<llvm::LLVMContext> ctx{};
     std::unique_ptr<llvm::Module> module{};
+
+    //extra builder for the vriables decleration.
+    //prepend just at the begining of the function
+    //entry block
+    std::unique_ptr<llvm::IRBuilder<>> varsBuilder{};
+
+
     std::unique_ptr<llvm::IRBuilder<>> builder{};
 
 };

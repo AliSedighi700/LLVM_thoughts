@@ -10,7 +10,8 @@ public:
 
     ~ErrorLogMessage()
     {
-        std::cerr << "Fatal Error: " << str().c_str();
+        std::ostringstream oss;
+        std::cerr << "Fatal Error: " << oss.str().c_str();
         exit(EXIT_FAILURE);
     }
 
@@ -20,4 +21,4 @@ private:
 };
 
 
-#endif Logger_H
+#endif

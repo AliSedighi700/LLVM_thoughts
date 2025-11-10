@@ -7,13 +7,16 @@ int main(int argc, char const *argv[])
 {
 
     std::string program = R"(
-       (var VERSION 42)
+      (var X 42)
 
        (begin
-            (var VERSION "Hello")
-            (printf "Version: %s\n\n" VERSION))
+            (var (X string) "Hello")
+            (printf "X: %s\n\n" X))
 
-       (printf "version: %d\n" VERSION)
+       (printf "X: %d\n" X)
+
+       (set X 100)
+       (printf "X: %d\n" X)
 
 
     )";

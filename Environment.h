@@ -12,13 +12,13 @@ class Environment : public std::enable_shared_from_this<Environment>
 {
 public:
 
-    Environment(std::map<std::string, llvm::value*> record,
+    Environment(std::map<std::string, llvm::Value*> record,
                std::shared_ptr<Environment> parent)
     : record_(record), parent_(parent)
     {}
 
     //create a variable with given name ans the value;
-    llvm::value* define(const std::string name, llvm::value* value)
+    llvm::Value* define(const std::string name, llvm::Value* value)
     {
         record_[name] = value;
         return value;
@@ -30,12 +30,12 @@ public:
     //using resolve to traverse in them. so resolve
     //should send an environment in which the actual
     //variable is found.
-    llvm::value* lookup(const std::string name)
+    llvm::Value* lookup(const std::string name)
     {
         return resolve(name) -> record_[name];
     }
 
-Privae:
+private:
 
     std::shared_ptr<Environment> resolve(const std::string& name)
     {
@@ -43,7 +43,8 @@ Privae:
 
         if(parent_ == nullptr)
         {
-            DIE << "Variable " << name << " is not defined" << '\n';
+            DIE;
+            std::cout << "Variable " << name << " is not defined" << '\n';
         }
 
         return parent_ -> resolve(name);
@@ -51,7 +52,7 @@ Privae:
 
     // The main component of the enivironment.
     // The actual storage
-    std::map<std::string, llvm::value*> record_{};
+    std::map<std::string, llvm::Value*> record_{};
 
     //multile environments can share the same
     //parent environment
@@ -60,4 +61,4 @@ Privae:
 
 };
 
-#endif Environment_H
+#endif
